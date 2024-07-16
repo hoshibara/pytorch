@@ -11,7 +11,7 @@ from torch._inductor.test_case import TestCase as InductorTestCase
 from torch._inductor.virtualized import ops
 from torch.testing._internal.common_utils import skipIfRocm
 
-from torch.testing._internal.inductor_utils import HAS_CPU, HAS_CUDA
+from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CPU, HAS_GPU
 
 
 # These tests check issues for lowerings that aren't in the main pytorch repo
@@ -24,6 +24,9 @@ class TestCustomLowering(InductorTestCase):
         )
         cls.impl_cuda = torch.library.Library(  # noqa: TOR901
             "test_inductor_ops", "IMPL", "CUDA"
+        )
+        cls.impl_xpu = torch.library.Library(  # noqa: TOR901
+            "test_inductor_ops", "IMPL", "XPU"
         )
         cls.impl_meta = torch.library.Library(  # noqa: TOR901
             "test_inductor_ops", "IMPL", "Meta"
@@ -99,49 +102,17 @@ class TestCustomLowering(InductorTestCase):
 
         cls.impl_meta.impl("jagged_to_padded_dense", j2pd_meta)
         cls.impl_cuda.impl("jagged_to_padded_dense", j2pd_cuda)
+        cls.impl_xpu.impl("jagged_to_padded_dense", j2pd_cuda)
 
-    @classmethod
-    def _register_asm_op(cls):
-        # Approximation of fbgemm.jagged_to_padded_dense_forward
-        cls.test_inductor_ops.define("tanh_approx(Tensor input) -> Tensor")
-
-        def tanh_approx_meta(inp):
-            return torch.tanh(inp)
-
-        cls.impl_meta.impl("tanh_approx", tanh_approx_meta)
-
-        def tanh_approx_lowering(inp):
-            fn = partial(ops.inline_asm_elementwise, asm="tanh.approx.f32 $0, $1;")
-            return make_pointwise(fn)(inp)
-
-        register_lowering(
-            torch.ops.test_inductor_ops.tanh_approx, type_promotion_kind=None
-        )(tanh_approx_lowering)
-
-        cls.test_inductor_ops.define("add_custom(Tensor a, Tensor b) -> Tensor")
-
-        def add_custom(a, b):
-            return a + b
-
-        cls.impl_meta.impl("add_custom", add_custom)
-
-        def add_custom_lowering(a, b):
-            fn = partial(ops.inline_asm_elementwise, asm="add.f32 $0, $1, $2;")
-            return make_pointwise(fn)(a, b)
-
-        register_lowering(
-            torch.ops.test_inductor_ops.add_custom, type_promotion_kind=None
-        )(add_custom_lowering)
-
-    @unittest.skipIf(not HAS_CUDA, "CUDA needed")
-    def test_jagged_to_padded_dense_sanity_cuda(self):
+    @unittest.skipIf(not HAS_GPU, "GPU needed")
+    def test_jagged_to_padded_dense_sanity_gpu(self):
         def fn(inp, offsets, max_seq_len):
             return torch.ops.test_inductor_ops.jagged_to_padded_dense(
                 inp, offsets, max_seq_len, 60.0
             )
 
-        inp = torch.rand((9, 96), device="cuda")
-        offsets = torch.tensor([0, 2, 5, 9], dtype=torch.int32, device="cuda")
+        inp = torch.rand((9, 96), device=GPU_TYPE)
+        offsets = torch.tensor([0, 2, 5, 9], dtype=torch.int32, device=GPU_TYPE)
         max_seq_len = 4
 
         res = fn(inp, offsets, max_seq_len)
@@ -158,19 +129,19 @@ class TestCustomLowering(InductorTestCase):
             fn(inp, offsets, max_seq_len), fn_opt(inp, offsets, max_seq_len)
         )
 
-    @unittest.skipIf(not HAS_CUDA, "CUDA needed")
+    @unittest.skipIf(not HAS_GPU, "GPU needed")
     def test_jagged_to_padded_dense_zero_size(self):
         # Previously, the masking was being completely stripped for the
         # masked load of the input value. That would lead to an IMA
         # because cuda was trying to read index 0 of a zero-size tensor.
         def fn(inp, offsets, max_seq_len):
-            inp = torch.bmm(inp, torch.ones((1, 96, 1), device="cuda")).view((0, 1))
+            inp = torch.bmm(inp, torch.ones((1, 96, 1), device=GPU_TYPE)).view((0, 1))
             return torch.ops.test_inductor_ops.jagged_to_padded_dense(
                 inp, offsets, max_seq_len, 60.0
             )
 
-        inp = torch.rand((1, 0, 96), device="cuda")
-        offsets = torch.zeros(1025, device="cuda", dtype=torch.int32)
+        inp = torch.rand((1, 0, 96), device=GPU_TYPE)
+        offsets = torch.zeros(1025, device=GPU_TYPE, dtype=torch.int32)
         max_seq_len = 20
 
         fn_opt = torch.compile(fn)
@@ -210,5 +181,5 @@ class TestCustomLowering(InductorTestCase):
 if __name__ == "__main__":
     from torch._inductor.test_case import run_tests
 
-    if HAS_CPU or HAS_CUDA:
+    if HAS_CPU or HAS_GPU:
         run_tests(needs="filelock")
