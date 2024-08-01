@@ -31,12 +31,10 @@ if IS_WINDOWS and IS_CI:
 from inductor.test_inductor_freezing import TestCase
 from inductor.test_torchinductor import check_model, check_model_gpu, copy_tests
 
-
 importlib.import_module("functorch")
 importlib.import_module("filelock")
 
 from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CPU, HAS_GPU
-
 
 aten = torch.ops.aten
 
