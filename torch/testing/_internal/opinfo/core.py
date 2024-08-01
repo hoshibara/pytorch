@@ -728,8 +728,6 @@ class OpInfo:
     # dtypes this function is expected to work with on ROCM
     dtypesIfROCM: _dispatch_dtypes = None
 
-    dtypesIfHpu: _dispatch_dtypes = None
-
     # dtypes this function is expected to work with on XPU
     dtypesIfXPU: _dispatch_dtypes = None
 
@@ -987,10 +985,6 @@ class OpInfo:
         )
         self.dtypesIfXPU = (
             set(self.dtypesIfXPU) if self.dtypesIfXPU is not None else self.dtypesIfCUDA
-        )
-
-        self.dtypesIfHpu = (
-            set(self.dtypesIfHpu) if self.dtypesIfHpu is not None else self.dtypes
         )
 
         # NOTE: if the op is unspecified it is assumed to be under the torch namespace
@@ -1411,8 +1405,6 @@ class OpInfo:
             return self.dtypesIfROCM if TEST_WITH_ROCM else self.dtypesIfCUDA
         if device_type == "xpu":
             return self.dtypesIfXPU
-        if device_type == "hpu":
-            return self.dtypesIfHpu
         return self.dtypes
 
     def supported_backward_dtypes(self, device_type):

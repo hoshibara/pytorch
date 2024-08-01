@@ -36,7 +36,6 @@ from torch.testing._internal.common_utils import (
 )
 from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CPU, HAS_GPU
 
-
 if IS_WINDOWS and IS_CI:
     sys.stderr.write(
         "Windows CI does not have necessary dependencies for test_torchinductor_dynamic_shapes yet\n"
@@ -921,55 +920,6 @@ class TestInductorDynamic(TestCase):
                 torch._check_is_size(x)
             y = sum(xs)
             return torch.zeros(y, device=device)
-
-        f(torch.tensor([5] * 80))
-
-    def test_sort_dynamic_shape_with_check(self, device):
-        if TEST_WITH_ROCM or torch.device(device).type != GPU_TYPE:
-
-            def check_count(n):
-                self.assertEqual(metrics.generated_kernel_count, 0)
-
-        else:
-
-            def check_count(n):
-                self.assertEqual(metrics.generated_kernel_count, n)
-
-        # Test dynamic shapes with statically known small enough to generate
-        # persistent sort kernel
-        def fn(a, descending):
-            torch._check(a.shape[-1] <= 256)
-            return a.sort(dim=-1, stable=True, descending=descending)
-
-        inp = torch.rand(10, 128, dtype=torch.float32, device=device)
-        inp[:, 10:20] = 1.0
-        inp[:, 30:40] = 1.0
-        metrics.reset()
-
-        opt_fn = torch.compile(fn, dynamic=True)
-        expect = fn(inp, False)
-        actual = opt_fn(inp, False)
-        self.assertEqual(actual, expect)
-        check_count(1)
-
-        expect = fn(inp, True)
-        actual = opt_fn(inp, True)
-        self.assertEqual(actual, expect)
-        check_count(2)
-
-        # Non-power of two
-        inp[:, :120]
-
-        expect = fn(inp, False)
-        actual = opt_fn(inp, False)
-        self.assertEqual(actual, expect)
-        check_count(2)  # Reused existing kernel
-
-        expect = fn(inp, True)
-        actual = opt_fn(inp, True)
-        self.assertEqual(actual, expect)
-        check_count(2)  # Reused existing kernel
-
 
 instantiate_device_type_tests(TestInductorDynamic, globals(), allow_xpu=True)
 

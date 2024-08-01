@@ -10,9 +10,7 @@ from pathlib import Path
 
 import torch
 from torch._inductor import config, test_operators
-from torch._inductor.utils import fresh_inductor_cache
 from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_GPU
-
 
 try:
     try:

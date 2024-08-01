@@ -17,12 +17,10 @@ from torch._inductor.utils import run_and_get_code
 from torch._library import capture_triton
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_utils import skipIfRocm, skipIfXpu, TEST_WITH_ROCM
-from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CUDA, HAS_GPU, HAS_XPU
 
 # Defines all the kernels for tests
 from torch.testing._internal.triton_utils import *  # noqa: F403
-from torch.utils._triton import has_triton_package
-
+from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CUDA, HAS_GPU, HAS_XPU
 
 if HAS_GPU:
     import triton
@@ -714,70 +712,6 @@ def forward(self, x_1, output_1):
         self.assertEqual(compiled_func(t1, t2, output2), torch_result)
 
     @requires_gpu
-    @common_utils.parametrize("dynamic", [False, True])
-    def test_triton_kernel_tracing(self, dynamic):
-        def call_triton_add(
-            x: torch.Tensor,
-            y: torch.Tensor,
-            grid_type: int,
-            num=1,
-            positional=False,
-            autotuned=False,
-        ):
-            output = torch.empty_like(x)
-            n_elements = output.numel()
-
-            def grid_fn(meta):
-                return (triton.cdiv(num, meta["BLOCK_SIZE"]),)
-
-            if grid_type == 0:
-                grid = (x.numel(),)
-            elif grid_type == 1:
-                grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-            elif grid_type == 2:
-                grid = grid_fn
-            else:
-                grid = [x.numel()]
-
-            if autotuned:
-                capture_triton(add_kernel_autotuned)[grid](x, y, output, n_elements)
-            else:
-                if positional:
-                    capture_triton(add_kernel)[grid](x, y, output, n_elements, 16)
-                else:
-                    capture_triton(add_kernel)[grid](
-                        x, y, output, n_elements, BLOCK_SIZE=16
-                    )
-
-            return output
-
-        t0 = torch.rand(5, device=GPU_TYPE, requires_grad=True)
-        t1 = torch.rand(5, device=GPU_TYPE, requires_grad=True)
-        t2 = torch.rand(5, device=GPU_TYPE, requires_grad=True)
-        t3 = torch.rand(5, device=GPU_TYPE, requires_grad=True)
-        torch_add = t2 + t3
-
-        tests = [
-            functools.partial(call_triton_add, grid_type=0),
-            functools.partial(call_triton_add, grid_type=1),
-            functools.partial(call_triton_add, grid_type=1, num=1, positional=True),
-            functools.partial(call_triton_add, grid_type=2, num=200),
-            functools.partial(call_triton_add, grid_type=3),
-            functools.partial(call_triton_add, grid_type=0, autotuned=True),
-            functools.partial(call_triton_add, grid_type=1, num=1, autotuned=True),
-            functools.partial(call_triton_add, grid_type=2, num=200, autotuned=True),
-            functools.partial(call_triton_add, grid_type=3, autotuned=True),
-        ]
-        from functorch import make_fx
-
-        tracing_mode = "symbolic" if dynamic else "fake"
-
-        for test in tests:
-            gm = make_fx(test, tracing_mode=tracing_mode)(t0, t1)
-            result = test(t2, t3)
-            self.assertEqual(result, torch_add)
-
-    @requires_gpu
     @common_utils.parametrize("grad", [False, True])
     @common_utils.parametrize("dynamic", [False, True])
     @common_utils.parametrize("backend", ["eager", "aot_eager", "inductor"])
@@ -1373,47 +1307,6 @@ def forward(self, x_1, output_1):
 
         x = torch.randn(4, device=GPU_TYPE)
         f(x, x)
-
-    @requires_gpu
-    @common_utils.parametrize("dynamic", [False, True])
-    @common_utils.parametrize("backend", ["eager", "aot_eager", "inductor"])
-    def test_triton_kernel_multiple_outputs(self, dynamic, backend):
-        @triton.jit
-        def add_kernel(
-            in_ptr0,
-            in_ptr1,
-            out_ptr,
-            out_ptr2,
-            n_elements,
-            BLOCK_SIZE: "tl.constexpr",
-        ):
-            pid = tl.program_id(axis=0)
-            block_start = pid * BLOCK_SIZE
-            offsets = block_start + tl.arange(0, BLOCK_SIZE)
-            mask = offsets < n_elements
-            x = tl.load(in_ptr0 + offsets, mask=mask)
-            y = tl.load(in_ptr1 + offsets, mask=mask)
-            output = x + y
-            tl.store(out_ptr + offsets, output, mask=mask)
-            tl.store(out_ptr2 + offsets, output + 1, mask=mask)
-
-        @torch.compile(fullgraph=True, backend=backend, dynamic=dynamic)
-        def f(x, y, z):
-            output = torch.empty_like(x)
-            output2 = torch.empty_like(x)
-            n_elements = output.numel()
-            grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-            add_kernel[grid](x, y, output, output2, n_elements, BLOCK_SIZE=16)
-            # The z return is intentional: we're testing training
-            return output, output2, z**2
-
-        x = torch.randn(3, requires_grad=True, device=GPU_TYPE)
-        y = torch.randn(3, requires_grad=True, device=GPU_TYPE)
-        z = torch.randn(3, requires_grad=True, device=GPU_TYPE)
-        out, out2, out3 = f(x, y, z)
-        self.assertEqual(out, x + y)
-        self.assertEqual(out2, x + y + 1)
-        self.assertEqual(out3, z**2)
 
     @requires_gpu
     @common_utils.parametrize("backend", ["eager", "aot_eager", "inductor"])
