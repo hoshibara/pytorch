@@ -430,9 +430,8 @@ def meta_fft_r2c(self, dim, normalization, onesided):
     if output_dtype == torch.bfloat16 and (device_hint(self) in ("cuda", "xpu")):
         output_dtype = torch.float32
 
-    if device_hint(self) == "cuda" or device_hint(self) == "xpu":
+    if device_hint(self) == "cuda":
         # _fft_r2c_cufft in aten/src/ATen/native/cuda/SpectralOps.cpp
-        # _fft_r2c_xpu in torch-xpu-ops/src/ATen/native/xpu/SpectralOps.cpp
         output = self.new_empty(
             out_sizes, dtype=utils.corresponding_complex_dtype(output_dtype)
         )
@@ -471,7 +470,8 @@ def meta_fft_r2c(self, dim, normalization, onesided):
 
         return output
 
-    elif torch.backends.mkl.is_available():
+    elif device_hint(self) == "xpu" or torch.backends.mkl.is_available():
+        # _fft_r2c_xpu (oneMKL) in torch-xpu-ops/src/ATen/native/xpu/mkl/SpectralOps.cpp
         # _fft_r2c_mkl in aten/src/ATen/native/mkl/SpectralOps.cpp
         sorted_dims = _sort_dims(self, dim, exclude_last=True)
         output = self.new_empty(
@@ -686,7 +686,8 @@ def meta_fft_c2r(self: Tensor, dim: list[int], normalization: int, lastdim: int)
                 temp = self.clone(memory_format=torch.contiguous_format)
             return _exec_fft(output, temp, out_sizes, [dim[-1]], forward=False)
 
-    elif torch.backends.mkl.is_available():
+    elif device_hint(self) == "xpu" or torch.backends.mkl.is_available():
+        # _fft_c2r_xpu (oneMKL) in torch-xpu-ops/src/ATen/native/xpu/mkl/SpectralOps.cpp
         # _fft_c2r_mkl in aten/src/ATen/native/mkl/SpectralOps.cpp
         input = self
         if len(dim) > 1:
