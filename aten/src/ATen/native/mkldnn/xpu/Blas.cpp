@@ -564,6 +564,27 @@ Tensor _weight_int4pack_mm_xpu(
   return C;
 }
 
+// 4-arg overload for _weight_int4pack_mm: qScaleAndZeros is [K/g, N, 2] bf16
+// with scales in [:,:,0] and zero-points (as bf16) in [:,:,1].
+// Split and delegate to the 5-arg implementation.
+Tensor _weight_int4pack_mm_xpu(
+    const Tensor& A,
+    const Tensor& B,
+    int64_t qGroupSize,
+    const Tensor& qScaleAndZeros) {
+  TORCH_CHECK(
+      qScaleAndZeros.dim() == 3 && qScaleAndZeros.size(2) == 2,
+      __func__,
+      ": expect qScaleAndZeros to be 3d tensor with last dim == 2, got sizes [",
+      qScaleAndZeros.size(0), ", ", qScaleAndZeros.size(1), ", ",
+      qScaleAndZeros.size(2), "]");
+
+  Tensor qScale = qScaleAndZeros.select(-1, 0).contiguous();
+  Tensor qZeros = qScaleAndZeros.select(-1, 1).contiguous().to(kChar);
+
+  return _weight_int4pack_mm_xpu(A, B, qGroupSize, qScale, qZeros);
+}
+
 Tensor& _int_mm_out_xpu(
     const Tensor& self,
     const Tensor& mat2,
