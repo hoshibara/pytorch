@@ -7119,7 +7119,7 @@ scipy_lobpcg  | {eq_err_scipy:10.2e}  | {eq_err_general_scipy:10.2e}  | {iters2:
                     b_tmp, inner_k_tiles
                 )
                 self.assertTrue(b_int4pack.dtype is torch.int32)
-                self.assertTrue(b_int4pack.dim() == 4)
+                self.assertTrue(b_int4pack.dim() == 2)
                 return torch._weight_int4pack_mm(
                     a, b_int4pack, q_group, b_scales_and_zeros
                 )
