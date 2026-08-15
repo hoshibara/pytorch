@@ -19,6 +19,11 @@
 #endif
 
 namespace at::native {
+
+Tensor _convert_weight_to_int4pack_xpu(
+    const Tensor& in,
+    int64_t innerKTiles);
+
 namespace xpu {
 
 // result = beta * self + alpha * (mat1 * mat2)
@@ -512,6 +517,64 @@ TORCH_IMPL_FUNC(addmv_out_xpu)
  const Tensor& result) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   xpu::addmv_out(self, mat, vec, beta, alpha, const_cast<Tensor&>(result));
+}
+
+Tensor _weight_int4pack_mm_xpu(
+    const Tensor& A,
+    const Tensor& B,
+    int64_t qGroupSize,
+    const Tensor& qScale,
+    const Tensor& qZeros);
+
+Tensor _weight_int4pack_mm_4arg_xpu(
+    const Tensor& A,
+    const Tensor& B,
+    int64_t qGroupSize,
+    const Tensor& qScaleAndZeros) {
+  TORCH_CHECK(
+      A.dtype() == kBFloat16 || A.dtype() == kHalf || A.dtype() == kFloat,
+      __func__,
+      " : expect A to be either 32-bit or 16-bit float tensor.");
+  TORCH_CHECK(A.is_contiguous(), __func__, " : expect A to be contiguous.");
+  TORCH_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
+
+  TORCH_CHECK(
+      B.dtype() == kInt || B.dtype() == kUInt32 || B.dtype() == kByte,
+      __func__,
+      " : expect B to be int32 or uint32 or uint8 tensor.");
+  TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
+  TORCH_CHECK(B.dim() == 2, __func__, " : expect B to be 2d tensor.");
+
+  TORCH_CHECK(
+      qGroupSize == 16 || qGroupSize == 32 || qGroupSize == 64 ||
+          qGroupSize == 128 || qGroupSize == 256,
+      __func__,
+      ": expect qGroupSize to be 16, 32, 64, 128 or 256, got ",
+      qGroupSize);
+
+  TORCH_CHECK(
+      qScaleAndZeros.dim() == 3 && qScaleAndZeros.size(2) == 2,
+      __func__,
+      ": expect qScaleAndZeros to be 3d tensor with last dim == 2");
+
+  std::optional<Device> common_device = std::nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, A, "xpu::_weight_int4pack_mm", "A");
+  c10::impl::check_and_update_common_device(
+      common_device, B, "xpu::_weight_int4pack_mm", "B");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      qScaleAndZeros,
+      "xpu::_weight_int4pack_mm",
+      "qScaleAndZeros");
+
+  Tensor B_int32 = (B.dtype() == kByte || B.dtype() == kUInt32)
+      ? _convert_weight_to_int4pack_xpu(B, /*innerKTiles=*/8)
+      : B;
+  Tensor qScale = qScaleAndZeros.select(-1, 0).contiguous();
+  Tensor qZeros = qScaleAndZeros.select(-1, 1).contiguous().to(kChar);
+
+  return _weight_int4pack_mm_xpu(A, B_int32, qGroupSize, qScale, qZeros);
 }
 
 Tensor _weight_int4pack_mm_xpu(
