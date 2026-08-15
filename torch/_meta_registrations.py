@@ -4165,6 +4165,8 @@ def meta__convert_weight_to_int4pack(w, inner_k_tiles):
     )
     n = w.size(0)
     k = w.size(1) * 2  # w is [n][k / 2] uint8
+    if w.fake_device.type == "xpu":
+        return w.new_empty((n, k // 8), dtype=torch.int32)
     return w.new_empty(
         (
             n // 8,
