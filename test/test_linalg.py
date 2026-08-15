@@ -8927,6 +8927,7 @@ scipy_lobpcg  | {eq_err_scipy:10.2e}  | {eq_err_general_scipy:10.2e}  | {iters2:
         run_test((1, 1), (1, 1, 1025))
 
     @skipCPUIfNoLapack
+    @skipIfXpu(msg="XPU takes too long to run this test")
     def test_pca_lowrank(self, device):
         from torch.testing._internal.common_utils import random_lowrank_matrix, random_sparse_matrix
 
