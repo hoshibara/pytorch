@@ -833,11 +833,7 @@ class _NestedReductionBase:
             return flat[::2] | (flat[1::2] << 4)
 
         x = torch.ones(B, D, device=GPU_TYPE, dtype=torch.bfloat16)
-        with fresh_inductor_cache():
-            metrics.reset()
-            torch._dynamo.reset()
-            compiled = torch.compile(f)
-            actual, generated = run_and_get_code(compiled, x)
+        actual, generated = run_and_get_code(torch.compile(f), x)
 
         self.assertEqual(actual, f(x))
         generated_text = "\n\n".join(
@@ -846,8 +842,7 @@ class _NestedReductionBase:
                 generated if isinstance(generated, (tuple, list)) else [generated]
             )
         )
-        self.assertEqual(metrics.codegen_nested_reduction, 1)
-        self.assertEqual(metrics.generated_kernel_count, 1)
+        self.check_fusion()
         self.assertEqual(generated_text.count(".run("), 1)
         self.assertNotRegex(generated_text, r"empty_strided_xpu\(\(32,\s*4096\)")
 
