@@ -815,6 +815,41 @@ class _NestedReductionBase:
         self.check_nested_matches_unnested(f, (x, w))
         self.check_fusion()
 
+    def test_sub_parent_pack2_followup_after_reorder(self):
+        """Fuse a half-domain adjacent-lane pack after reorder fusion."""
+
+        B, D, G = 32, 4096, 32
+
+        def f(x):
+            grouped = x.view(B, D // G, G)
+            amax = grouped.abs().amax(dim=-1)
+            scale = (amax / 6.0).clamp(min=1e-6)
+            scale_full = scale.unsqueeze(-1).expand_as(grouped).reshape(B, D)
+            ones = torch.ones_like(x, dtype=torch.uint8)
+            zeros = torch.zeros_like(x, dtype=torch.uint8)
+            encoded = torch.where(scale_full > 0, ones, zeros)
+            flat = encoded.reshape(-1)
+            return flat[::2] | (flat[1::2] << 4)
+
+        x = torch.ones(B, D, device=GPU_TYPE, dtype=torch.bfloat16)
+        with fresh_inductor_cache():
+            metrics.reset()
+            torch._dynamo.reset()
+            compiled = torch.compile(f)
+            actual, generated = run_and_get_code(compiled, x)
+
+        self.assertEqual(actual, f(x))
+        generated_text = "\n\n".join(
+            str(part)
+            for part in (
+                generated if isinstance(generated, (tuple, list)) else [generated]
+            )
+        )
+        self.assertEqual(metrics.codegen_nested_reduction, 1)
+        self.assertEqual(metrics.generated_kernel_count, 1)
+        self.assertEqual(generated_text.count(".run("), 1)
+        self.assertNotRegex(generated_text, r"empty_strided_xpu\(\(32,\s*4096\)")
+
     def test_grouped_reduction_with_weight_mul(self):
         """Grouped reduction input involves element-wise weight multiply."""
         B, D, G = 128, 4096, 32

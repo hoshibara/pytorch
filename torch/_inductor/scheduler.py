@@ -6888,7 +6888,24 @@ class Scheduler:
                 config.loop_ordering_after_fusion
                 or config.loop_index_inversion_in_fusion
             ):
+                before_reorder_len = len(nodes)
+                before_reduction_groups = {
+                    tuple(sorted(node.get_operation_names()))
+                    for node in nodes
+                    if isinstance(node, FusedSchedulerNode) and node.is_reduction()
+                }
                 nodes = self.fuse_nodes_once(nodes, is_reorder_round=True)
+                after_reduction_groups = {
+                    tuple(sorted(node.get_operation_names()))
+                    for node in nodes
+                    if isinstance(node, FusedSchedulerNode) and node.is_reduction()
+                }
+                formed_reduction_group = (
+                    len(nodes) < before_reorder_len
+                    and bool(after_reduction_groups - before_reduction_groups)
+                )
+                if config.triton.nested_reduction and formed_reduction_group:
+                    nodes = self.fuse_nodes_once(nodes, is_reorder_round=False)
             return nodes
 
     def process_grouped_nodes(self) -> None:
