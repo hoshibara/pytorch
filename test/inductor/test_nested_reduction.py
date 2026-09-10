@@ -828,6 +828,7 @@ class _NestedReductionBase:
             ones = torch.ones_like(x, dtype=torch.uint8)
             zeros = torch.zeros_like(x, dtype=torch.uint8)
             encoded = torch.where(scale_full > 0, ones, zeros)
+            encoded = torch.ops._inductor_test.realize(encoded)
             flat = encoded.reshape(-1)
             return flat[::2] | (flat[1::2] << 4)
 
