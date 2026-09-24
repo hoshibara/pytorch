@@ -154,6 +154,17 @@ Tensor& zero_(Tensor &self) {
       nelements < internal::GRAIN_SIZE) {
     return zero_cpu_(self, nelements);
   }
+  // zero_() must zero the underlying storage bytes. For dtypes that have no
+  // fill kernel on some backends (bitserial Bits* and Float4_e2m1fn_x2),
+  // value 0 is the all-zero bit pattern in every layout, so zeroing the raw
+  // bytes is always valid. Reinterpret the dense storage as uint8 (which has
+  // fill kernels on all backends) and fill that instead of relying on a
+  // dtype-specific fill kernel.
+  auto t = self.scalar_type();
+  if (self.is_non_overlapping_and_dense() &&
+      (c10::isBitsType(t) || t == at::ScalarType::Float4_e2m1fn_x2)) {
+    return self.view(at::kByte).fill_(0);
+  }
   return self.fill_(0);
 }
 
